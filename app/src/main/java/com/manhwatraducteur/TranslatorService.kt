@@ -8,8 +8,6 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
-import android.graphics.PixelFormat
-import android.hardware.input.InputManager
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -58,7 +56,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
     private var capturer: ScreenCapturer? = null
     private val tracker = ScrollTracker()
     private var bubble: FloatingBubble? = null
-    private var overlay: TranslationOverlayView? = null
+    private var overlay: TranslationOverlay? = null
     private var ocr: OcrEngine? = null
     private var mlkit: MlKitEngine? = null
     private var gemini: GeminiEngine? = null
@@ -109,31 +107,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
     // ------------------------------------------------------------------ fenêtres
 
     private fun setupWindows() {
-        val ov = TranslationOverlayView(this)
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-            // Android 12+ bloque les touchers qui traversent une superposition plus opaque que 80 % :
-            // on reste juste sous la limite pour pouvoir continuer à faire défiler la page.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                alpha = getSystemService(InputManager::class.java).maximumObscuringOpacityForTouch
-            }
-        }
-        wm.addView(ov, params)
-        overlay = ov
-
+        overlay = TranslationOverlay(this, wm)
         bubble = FloatingBubble(this, wm, this).also {
             it.setIdleLabel(settings.targetLang.uppercase())
             it.attach()
@@ -303,10 +277,11 @@ class TranslatorService : Service(), FloatingBubble.Listener {
                     // 4. Affichage + référence pour le suivi du défilement
                     val items = bubbles.zip(result)
                         .filter { it.second.isNotBlank() }
-                        .map { (bub, tr) -> TranslationOverlayView.Item(bub, tr) }
+                        .map { (bub, tr) -> TranslationOverlay.Item(bub, tr) }
                     if (items.isEmpty()) { flash("∅"); return@launch }
                     withContext(Dispatchers.Default) { tracker.setReference(bitmap) }
                     ov.setItems(items, cap.width)
+                    b.bringToFront()
                     updateMasks()
                     shown = true
                     b.setStatus(null)
@@ -371,7 +346,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
         main.removeCallbacksAndMessages(null)
         scope.cancel()
         bubble?.detach(); bubble = null
-        overlay?.let { runCatching { wm.removeView(it) } }; overlay = null
+        overlay?.clear(); overlay = null
         capturer?.stop(); capturer = null
         tracker.reset()
         projection?.stop(); projection = null

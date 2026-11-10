@@ -108,6 +108,12 @@ class FloatingBubble(
     }
     fun detach() { runCatching { wm.removeView(view) } }
 
+    /** Remet la bulle au-dessus des cartouches de traduction (ajoutés après elle). */
+    fun bringToFront() {
+        runCatching { wm.removeView(view) }
+        runCatching { wm.addView(view, params) }
+    }
+
     fun setIdleLabel(label: String) {
         idleLabel = label
         view.text = label

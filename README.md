@@ -42,7 +42,7 @@ Au premier lancement : autoriser « l'affichage par-dessus les autres applis »,
 - Avec la clé Gemini gratuite, Google peut utiliser les captures envoyées pour améliorer ses modèles, et le nombre de requêtes par minute est limité.
 - Le suivi du défilement ne gère que le défilement vertical (pas le zoom ni le glissement horizontal).
 - L'OCR peut rater du texte très stylisé (onomatopées, polices manuscrites, texte en biais).
-- Android 12+ impose qu'une superposition qui laisse passer les touchers soit opaque à 80 % max : le texte d'origine se devine légèrement derrière le cartouche.
+- Les cartouches sont totalement blancs. Contrepartie imposée par Android 12+ : un glissement qui commence pile sur un cartouche ne fait pas défiler la page, il faut glisser à côté.
 - Les jeux ou applis protégées (DRM, `FLAG_SECURE`) donnent une capture noire.
 
 ## Licence
