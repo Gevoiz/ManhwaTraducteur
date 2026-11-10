@@ -24,7 +24,7 @@ class ScreenCapturer(
     private val context: Context,
     private val projection: MediaProjection,
     private val tracker: ScrollTracker,
-    private val onFrame: (ScrollTracker.Result?) -> Unit,
+    private val onFrame: (ScrollTracker.Result?, Boolean) -> Unit,
 ) {
     private val thread = HandlerThread("screen-capture").apply { start() }
     private val handler = Handler(thread.looper)
@@ -33,6 +33,9 @@ class ScreenCapturer(
     private var reader: ImageReader? = null
     private var display: VirtualDisplay? = null
     private var latest: Image? = null
+
+    /** Nombre d'images reçues depuis le début (pour attendre une image postérieure à un changement). */
+    @Volatile var frameCount = 0L; private set
 
     var width = 0; private set
     var height = 0; private set
@@ -92,13 +95,45 @@ class ScreenCapturer(
                 val img = try { r.acquireLatestImage() } catch (_: IllegalStateException) { null }
                     ?: return@setOnImageAvailableListener
                 val result = if (tracker.active) runCatching { tracker.track(img) }.getOrNull() else null
+                val moving = runCatching { measureMotion(img) }.getOrDefault(true)
                 synchronized(lock) {
                     latest?.close()
                     latest = img
+                    frameCount++
                 }
-                onFrame(result)
+                onFrame(result, moving)
             }, handler)
         }
+
+    private var lastSamples: IntArray? = null
+
+    /**
+     * L'écran a-t-il vraiment bougé ? Une petite animation (pub, GIF, curseur) change peu de points :
+     * on ne la compte pas comme un défilement, sinon le mode auto attendrait indéfiniment.
+     */
+    private fun measureMotion(img: Image): Boolean {
+        val plane = img.planes[0]
+        val buf = plane.buffer
+        val ps = plane.pixelStride; val rs = plane.rowStride
+        val nx = 24; val ny = 48
+        val s = IntArray(nx * ny)
+        var k = 0
+        for (j in 0 until ny) {
+            val y = (img.height - 1) * j / (ny - 1)
+            for (i in 0 until nx) {
+                val x = (img.width - 1) * i / (nx - 1)
+                val o = y * rs + x * ps
+                s[k++] = ((buf.get(o).toInt() and 0xFF) * 77 + (buf.get(o + 1).toInt() and 0xFF) * 150 +
+                    (buf.get(o + 2).toInt() and 0xFF) * 29) shr 8
+            }
+        }
+        val prev = lastSamples
+        lastSamples = s
+        if (prev == null || prev.size != s.size) return true
+        var changed = 0
+        for (i in s.indices) if (kotlin.math.abs(s[i] - prev[i]) > 24) changed++
+        return changed > s.size / 10
+    }
 
     private fun screenSize(): Triple<Int, Int, Int> {
         val wm = context.getSystemService(WindowManager::class.java)

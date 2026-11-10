@@ -103,6 +103,11 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
         windows.clear()
     }
 
+    /** Masque (sans les retirer) les cartouches, le temps de prendre une capture propre. */
+    fun setVisible(visible: Boolean) {
+        for (w in windows) w.view.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+    }
+
     fun setOffset(dy: Int) {
         if (dy == offsetY) return
         offsetY = dy

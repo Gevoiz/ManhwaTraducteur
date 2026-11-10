@@ -27,6 +27,8 @@ class GeminiEngine(
 
     val model = model.trim().removePrefix("models/").ifBlank { DEFAULT_GEMINI_MODEL }
     private val history = ArrayDeque<Pair<String, String>>()
+    /** Réflexion minimale : réponse bien plus rapide, largement suffisant pour traduire. */
+    @Volatile private var fastThinking = true
 
     override suspend fun translateAll(texts: List<String>, screenshot: Bitmap?): List<String> =
         withContext(Dispatchers.IO) {
@@ -40,18 +42,20 @@ class GeminiEngine(
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("x-goog-api-key", apiKey)
             }
-            try {
-                conn.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) throw GeminiException(describeError(code, body))
-                val result = parse(body, texts)
-                remember(texts, result)
-                result
-            } finally {
-                conn.disconnect()
+            // Pas de disconnect() : la connexion reste ouverte et la suivante évite la poignée de main TLS.
+            conn.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code == 400 && fastThinking && body.contains("thinking", ignoreCase = true)) {
+                // Ce modèle n'accepte pas le réglage de réflexion : on réessaie sans.
+                fastThinking = false
+                return@withContext translateAll(texts, screenshot)
             }
+            if (code !in 200..299) throw GeminiException(describeError(code, body))
+            val result = parse(body, texts)
+            remember(texts, result)
+            result
         }
 
     private fun buildRequest(texts: List<String>, screenshot: Bitmap?): JSONObject {
@@ -90,6 +94,7 @@ class GeminiEngine(
                     .put("temperature", 0.3)
                     .put("responseMimeType", "application/json")
                     .put("responseSchema", JSONObject().put("type", "ARRAY").put("items", JSONObject().put("type", "STRING")))
+                    .apply { if (fastThinking) put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal")) }
             )
     }
 
@@ -121,7 +126,7 @@ class GeminiEngine(
         val w = 720
         val scaled = if (bmp.width > w) Bitmap.createScaledBitmap(bmp, w, bmp.height * w / bmp.width, true) else bmp
         val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 75, out)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 70, out)
         if (scaled !== bmp) scaled.recycle()
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
