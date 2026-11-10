@@ -39,10 +39,11 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-    private val pad = context.dp(5)
+    private val pad = context.dp(5)          // marge du cartouche autour de la bulle d'origine (ne change pas)
+    private val textPad = context.dp(3)      // marge du texte à l'intérieur du cartouche
     private val radius = context.dp(10).toFloat()
     private val minTextSize = context.sp(9)
-    private val maxTextSize = context.sp(26)
+    private val maxTextSize = context.sp(34)
 
     private val windows = mutableListOf<Pair<BoxView, WindowManager.LayoutParams>>()
 
@@ -127,26 +128,36 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
         val r = item.bubble.rect
         val margin = context.dp(4)
         val boxW = max(r.width() + pad * 2, context.dp(90)).coerceAtMost(screenW - margin * 2)
-        val innerW = boxW - pad * 2
+        val innerW = boxW - textPad * 2
         val baseH = r.height() + pad * 2
-        val innerH = baseH - pad * 2
+        val innerH = baseH - textPad * 2
 
-        // On part d'une taille proche du texte d'origine et on réduit jusqu'à ce que ça rentre.
+        // Le cartouche garde sa taille : on cherche la plus grande police qui y tient
+        // (sans couper un mot en deux), plafonnée un peu au-dessus de la taille du texte d'origine.
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; typeface = this@TranslationOverlay.typeface }
-        var size = (item.bubble.lineHeight * 0.8f).coerceIn(minTextSize, maxTextSize)
-        var layout: StaticLayout
-        while (true) {
+        val words = item.translated.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        fun build(size: Float): StaticLayout {
             paint.textSize = size
-            layout = StaticLayout.Builder.obtain(item.translated, 0, item.translated.length, paint, innerW)
+            return StaticLayout.Builder.obtain(item.translated, 0, item.translated.length, paint, innerW)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER)
                 .setIncludePad(false)
-                .setLineSpacing(0f, 0.95f)
+                .setLineSpacing(0f, 0.92f)
                 .build()
-            if (layout.height <= innerH || size <= minTextSize) break
-            size -= 1f
         }
+        fun fits(size: Float): Boolean {
+            val layout = build(size)
+            return layout.height <= innerH && words.all { paint.measureText(it) <= innerW }
+        }
+        val ceiling = (item.bubble.lineHeight * 1.3f).coerceIn(minTextSize, maxTextSize)
+        var lo = minTextSize; var hi = ceiling
+        if (fits(hi)) lo = hi
+        else repeat(10) {
+            val mid = (lo + hi) / 2
+            if (fits(mid)) lo = mid else hi = mid
+        }
+        val layout = build(lo)
 
-        val boxH = max(baseH, layout.height + pad * 2)
+        val boxH = max(baseH, layout.height + textPad * 2)
         val left = (r.centerX() - boxW / 2).coerceIn(margin, max(margin, screenW - boxW - margin))
         val top = r.top - pad
         val box = Rect(left, top, left + boxW, top + boxH)
@@ -163,7 +174,7 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
             canvas.drawRoundRect(rect, radius, radius, fillPaint)
             canvas.drawRoundRect(rect, radius, radius, strokePaint)
             canvas.save()
-            canvas.translate(pad.toFloat(), placed.textTop)
+            canvas.translate(textPad.toFloat(), placed.textTop)
             placed.layout.draw(canvas)
             canvas.restore()
         }
