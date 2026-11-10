@@ -39,3 +39,7 @@ Au premier lancement : autoriser « l'affichage par-dessus les autres applis »,
 - L'OCR peut rater du texte très stylisé (onomatopées, polices manuscrites, texte en biais).
 - Android 12+ impose qu'une superposition qui laisse passer les touchers soit opaque à 80 % max : le texte d'origine se devine légèrement derrière le cartouche.
 - Les jeux ou applis protégées (DRM, `FLAG_SECURE`) donnent une capture noire.
+
+## Licence
+
+[MIT](LICENSE)
