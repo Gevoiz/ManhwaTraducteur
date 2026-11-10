@@ -26,6 +26,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,6 +43,8 @@ class TranslatorService : Service(), FloatingBubble.Listener {
         private const val CHANNEL_ID = "translator"
         private const val NOTIF_ID = 1
         private const val TAG = "ManhwaTraducteur"
+        /** Au-delà, on affiche un aperçu hors-ligne en attendant Gemini. */
+        private const val GEMINI_PATIENCE_MS = 2000L
 
         @Volatile var running = false
             private set
@@ -272,6 +276,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
                     // 3. Les bulles déjà traduites sortent de la mémoire et s'affichent tout de suite ;
                     //    seules les nouvelles partent au moteur de traduction.
                     val g = geminiEngine()
+                    if (g != null) prepareOfflinePreview()
                     cache.setScope(
                         if (g != null) "gemini|${g.model}|${g.source}|${g.target}"
                         else "mlkit|${settings.sourceLang}|${settings.targetLang}"
@@ -295,7 +300,18 @@ class TranslatorService : Service(), FloatingBubble.Listener {
                     if (missing.isNotEmpty()) {
                         if (missing.size < texts.size && show()) shown = true
                         val todo = missing.map { texts[it] }
-                        val fresh = translate(g, todo, bitmap, b)
+                        val job = async { translate(g, todo, bitmap, b) }
+                        if (g != null && withTimeoutOrNull(GEMINI_PATIENCE_MS) { job.await() } == null) {
+                            // Gemini traîne : aperçu immédiat avec la traduction hors-ligne (non mémorisée),
+                            // remplacée par celle de Gemini dès qu'elle arrive.
+                            val m = mlkitEngine()
+                            val preview = if (m.ready) runCatching { m.translateAll(todo, null) }.getOrNull() else null
+                            if (preview != null && job.isActive) {
+                                missing.forEachIndexed { i, idx -> result[idx] = preview[i] }
+                                if (show()) shown = true
+                            }
+                        }
+                        val fresh = job.await()
                         missing.forEachIndexed { i, idx ->
                             result[idx] = fresh.texts[i]
                             if (fresh.cacheable) cache.put(todo[i], fresh.texts[i])
@@ -344,6 +360,17 @@ class TranslatorService : Service(), FloatingBubble.Listener {
             if (elapsed >= 50 && cap.frameCount >= first + 2) return
             delay(8)
         }
+    }
+
+    private var offlinePrepared: String? = null
+
+    /** Avec Gemini, on prépare aussi le modèle hors-ligne (une fois, en tâche de fond) pour les aperçus. */
+    private fun prepareOfflinePreview() {
+        val m = mlkitEngine()
+        val key = "${m.source}|${m.target}"
+        if (offlinePrepared == key) return
+        offlinePrepared = key
+        scope.launch { runCatching { m.ensureModel() }.onFailure { offlinePrepared = null } }
     }
 
     private class Fresh(val texts: List<String>, val cacheable: Boolean)

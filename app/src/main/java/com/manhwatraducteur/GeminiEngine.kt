@@ -32,21 +32,14 @@ class GeminiEngine(
 
     override suspend fun translateAll(texts: List<String>, screenshot: Bitmap?): List<String> =
         withContext(Dispatchers.IO) {
-            val request = buildRequest(texts, screenshot)
-            val conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
-                .openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 60_000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("x-goog-api-key", apiKey)
+            val request = buildRequest(texts, screenshot).toString().toByteArray(Charsets.UTF_8)
+            val (code, body) = try {
+                post(request)
+            } catch (e: java.io.IOException) {
+                if (e is java.net.SocketTimeoutException) throw GeminiException("pas de réponse (réseau lent ?)")
+                // Une connexion réutilisée a pu être fermée par le serveur entre-temps : un seul nouvel essai.
+                post(request)
             }
-            // Pas de disconnect() : la connexion reste ouverte et la suivante évite la poignée de main TLS.
-            conn.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code == 400 && fastThinking && body.contains("thinking", ignoreCase = true)) {
                 // Ce modèle n'accepte pas le réglage de réflexion : on réessaie sans.
                 fastThinking = false
@@ -57,6 +50,30 @@ class GeminiEngine(
             remember(texts, result)
             result
         }
+
+    private fun post(request: ByteArray): Pair<Int, String> {
+        val conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 8_000
+            readTimeout = 20_000
+            doOutput = true
+            setFixedLengthStreamingMode(request.size)
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("x-goog-api-key", apiKey)
+        }
+        // Pas de disconnect() en cas de succès : la connexion reste ouverte et la suivante évite la poignée de main TLS.
+        try {
+            conn.outputStream.use { it.write(request) }
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            return code to body
+        } catch (e: java.io.IOException) {
+            conn.disconnect()
+            throw e
+        }
+    }
 
     private fun buildRequest(texts: List<String>, screenshot: Bitmap?): JSONObject {
         val src = languageName(source)
