@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Manhwa Traducteur</string>
+    <string name="accessibility_label">Manhwa Traducteur : défilement à travers les traductions</string>
+    <string name="accessibility_description">Permet d\'afficher les traductions en blanc opaque tout en laissant passer les glissements vers l\'appli de lecture. Ce service ne lit pas le contenu de l\'écran et n\'effectue aucune action.</string>
 </resources>

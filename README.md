@@ -25,7 +25,7 @@ Copie l'APK sur ton téléphone, ouvre-le et autorise « installer des applis in
 | Appui long | Effacer la traduction |
 | Glisser | Déplacer la bulle |
 
-Options : langue source (anglais, coréen, japonais, chinois), langue cible (français par défaut), moteur de traduction, suivi du défilement, et un **mode auto** qui retraduit tout seul quand l'écran s'arrête après un bon défilement.
+Options : langue source (anglais, coréen, japonais, chinois), langue cible (français par défaut), moteur de traduction, suivi du défilement, zone ignorée en bas de l'écran (pour les boutons « chapitre suivant » des sites), et un **mode auto** qui retraduit tout seul quand l'écran s'arrête après un bon défilement.
 
 ## Compiler et installer
 
@@ -42,7 +42,7 @@ Au premier lancement : autoriser « l'affichage par-dessus les autres applis »,
 - Avec la clé Gemini gratuite, Google peut utiliser les captures envoyées pour améliorer ses modèles, et le nombre de requêtes par minute est limité.
 - Le suivi du défilement ne gère que le défilement vertical (pas le zoom ni le glissement horizontal).
 - L'OCR peut rater du texte très stylisé (onomatopées, polices manuscrites, texte en biais).
-- Les cartouches sont totalement blancs. Contrepartie imposée par Android 12+ : un glissement qui commence pile sur un cartouche ne fait pas défiler la page, il faut glisser à côté.
+- Les cartouches sont 100 % opaques. Android 12+ bloque alors les glissements qui commencent pile sur un cartouche, **sauf** si tu actives le service d'accessibilité de l'appli (bouton « Activer le défilement à travers les traductions »). Ce service ne lit pas l'écran et ne fait aucune action. Sur Android 13+, s'il est grisé : Paramètres → Applis → Manhwa Traducteur → ⋮ → « Autoriser les paramètres restreints ».
 - Les jeux ou applis protégées (DRM, `FLAG_SECURE`) donnent une capture noire.
 
 ## Licence

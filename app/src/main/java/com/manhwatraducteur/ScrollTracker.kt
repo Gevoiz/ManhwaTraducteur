@@ -19,8 +19,12 @@ import kotlin.math.min
 class ScrollTracker {
 
     sealed interface Result {
-        /** Le contenu qui était à la ligne y est maintenant à la ligne y + dy. */
-        data class Offset(val dy: Int) : Result
+        /**
+         * Le contenu qui était à la ligne y est maintenant à la ligne y + dy.
+         * [lead] : petite avance (en px) à ajouter pour compenser le temps de traitement pendant
+         * un glissement rapide (0 quand la page est immobile).
+         */
+        data class Offset(val dy: Int, val lead: Int = 0) : Result
         /** Impossible de retrouver la page (changement de chapitre, zoom, page vide…). */
         data object Lost : Result
     }
@@ -31,6 +35,9 @@ class ScrollTracker {
         const val TEXTURE = 5     // variation horizontale minimale pour qu'une ligne soit exploitable
         const val COARSE_THR = 12 // écart moyen de luminosité toléré (blocs)
         const val FINE_THR = 16   // écart moyen toléré (lignes)
+        const val NEAR = 40       // demi-largeur de la recherche ciblée, en blocs (±320 px)
+        const val LEAD_MS = 16.0  // avance ≈ 1 image à 60 Hz
+        const val MAX_LEAD = 48
     }
 
     private val lock = Any()
@@ -50,6 +57,8 @@ class ScrollTracker {
     private var curCoarseValid = BooleanArray(0)
 
     private var lastOffset = 0
+    private var lastTimeNs = 0L
+    private var velocity = 0.0  // px par milliseconde (lissée)
 
     /** Zones à ignorer dans les images courantes (coordonnées écran). */
     @Volatile var masks: List<Rect> = emptyList()
@@ -75,7 +84,7 @@ class ScrollTracker {
 
         cur = IntArray(height * K); curValid = BooleanArray(height * K)
         curCoarse = IntArray(refCoarse.size); curCoarseValid = BooleanArray(refCoarse.size)
-        lastOffset = 0
+        lastOffset = 0; lastTimeNs = 0L; velocity = 0.0
     }
 
     fun reset() = synchronized(lock) { ref = null }
@@ -109,32 +118,52 @@ class ScrollTracker {
             }
         }
 
-        // 2. Recherche grossière sur tous les décalages possibles
+        // 2. Recherche grossière. On cherche d'abord autour de la position prévue d'après la vitesse
+        //    du glissement (rapide), et on ne balaie tout l'écran que si on n'y trouve rien.
         val rows = height / C
         coarse(cur, curValid, height, curCoarse, curCoarseValid)
         val maxD = (rows * 0.85).toInt()
-        var bestD = 0; var bestScore = Int.MIN_VALUE; var bestMatch = 0; var bestConsidered = 0
-        val lastCoarse = lastOffset / C
-        for (d in -maxD..maxD) {
-            val (match, considered) = score(refCoarse, refCoarseTex, curCoarse, curCoarseValid, rows, d, COARSE_THR)
-            val s = 2 * match - considered
-            if (s > bestScore || (s == bestScore && abs(d - lastCoarse) < abs(bestD - lastCoarse))) {
-                bestScore = s; bestD = d; bestMatch = match; bestConsidered = considered
-            }
-        }
-        if (bestMatch < 6 || bestMatch < 0.6 * bestConsidered) return Result.Lost
+        val now = img.timestamp
+        val dtMs = if (lastTimeNs > 0) ((now - lastTimeNs) / 1_000_000.0).coerceIn(0.0, 200.0) else 0.0
+        val predicted = ((lastOffset + velocity * dtMs) / C).toInt()
+        var best = coarseSearch(rows, (predicted - NEAR).coerceAtLeast(-maxD), (predicted + NEAR).coerceAtMost(maxD), predicted)
+        if (!best.accepted()) best = coarseSearch(rows, -maxD, maxD, lastOffset / C)
+        if (!best.accepted()) return Result.Lost
 
         // 3. Affinage au pixel près autour du meilleur bloc
-        var fineD = bestD * C; var fineScore = Int.MIN_VALUE; var fineMatch = 0; var fineConsidered = 0
-        for (d in bestD * C - C - 2..bestD * C + C + 2) {
+        var fineD = best.d * C; var fineScore = Int.MIN_VALUE; var fineMatch = 0; var fineConsidered = 0
+        for (d in best.d * C - C - 2..best.d * C + C + 2) {
             val (match, considered) = score(r, refTex, cur, curValid, height, d, FINE_THR)
             val s = 2 * match - considered
             if (s > fineScore) { fineScore = s; fineD = d; fineMatch = match; fineConsidered = considered }
         }
         if (fineMatch < 20 || fineMatch < 0.5 * fineConsidered) return Result.Lost
 
+        // 4. Vitesse lissée → petite avance pour que les cartouches ne traînent pas derrière la page
+        if (dtMs > 0) {
+            val v = (fineD - lastOffset) / dtMs
+            velocity = if (abs(fineD - lastOffset) <= 1) 0.0 else velocity * 0.4 + v * 0.6
+        }
         lastOffset = fineD
-        Result.Offset(fineD)
+        lastTimeNs = now
+        val lead = (velocity * LEAD_MS).toInt().coerceIn(-MAX_LEAD, MAX_LEAD)
+        Result.Offset(fineD, lead)
+    }
+
+    private class Best(val d: Int, val match: Int, val considered: Int) {
+        fun accepted() = match >= 6 && match >= 0.6 * considered
+    }
+
+    private fun coarseSearch(rows: Int, from: Int, to: Int, prefer: Int): Best {
+        var bestD = prefer; var bestScore = Int.MIN_VALUE; var bestMatch = 0; var bestConsidered = 0
+        for (d in from..to) {
+            val (match, considered) = score(refCoarse, refCoarseTex, curCoarse, curCoarseValid, rows, d, COARSE_THR)
+            val s = 2 * match - considered
+            if (s > bestScore || (s == bestScore && abs(d - prefer) < abs(bestD - prefer))) {
+                bestScore = s; bestD = d; bestMatch = match; bestConsidered = considered
+            }
+        }
+        return Best(bestD, bestMatch, bestConsidered)
     }
 
     private fun score(

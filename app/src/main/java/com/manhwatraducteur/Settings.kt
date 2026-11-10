@@ -49,6 +49,11 @@ class Settings(context: Context) {
         get() = sp.getBoolean("autoMode", false)
         set(v) = sp.edit().putBoolean("autoMode", v).apply()
 
+    /** Bandeau ignoré en bas de l'écran, au-dessus des boutons Android (en % de la hauteur). */
+    var bottomDeadZone: Int
+        get() = sp.getInt("bottomDeadZone", 8)
+        set(v) = sp.edit().putInt("bottomDeadZone", v).apply()
+
     var engine: String
         get() = sp.getString("engine", ENGINE_MLKIT)!!
         set(v) = sp.edit().putString("engine", v).apply()

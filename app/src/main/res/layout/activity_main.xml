@@ -139,6 +139,27 @@
             android:text="Mode auto : retraduire dès que l'écran s'arrête" />
 
         <TextView
+            android:id="@+id/deadZoneLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/deadZoneSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="25" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bandeau du bas de l'écran (juste au-dessus des boutons Android) où le texte n'est pas traduit : évite les boutons « Chapitre précédent / suivant » des sites."
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
             android:id="@+id/overlayStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -151,6 +172,29 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Autoriser l'affichage par-dessus les applis" />
+
+        <TextView
+            android:id="@+id/accessStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/accessButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Activer le défilement à travers les traductions" />
+
+        <TextView
+            android:id="@+id/accessHelp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dans Accessibilité → Applis installées → Manhwa Traducteur, active le service. S'il est grisé (Android 13+ pour les applis installées hors Play Store) : Paramètres → Applis → Manhwa Traducteur → menu ⋮ en haut à droite → « Autoriser les paramètres restreints », puis réessaie.
+
+Le service ne lit pas l'écran et ne fait aucune action : il sert seulement à laisser passer tes glissements à travers les traductions."
+            android:textAppearance="?attr/textAppearanceBodySmall" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/startButton"

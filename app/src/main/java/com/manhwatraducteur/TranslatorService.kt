@@ -66,6 +66,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
     private var lastFrameAt = 0L
     private var changedSinceTranslate = true
     private var lostFrames = 0
+    private var currentLead = 0
     private var missingKeyWarned = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -143,8 +144,10 @@ class TranslatorService : Service(), FloatingBubble.Listener {
             when (res) {
                 is ScrollTracker.Result.Offset -> {
                     lostFrames = 0
-                    if (res.dy != ov.offsetY) {
-                        ov.setOffset(res.dy)
+                    val target = res.dy + res.lead
+                    if (target != ov.offsetY) {
+                        currentLead = res.lead
+                        ov.setOffset(target)
                         updateMasks()
                         lastFrameAt = now
                         changedSinceTranslate = true
@@ -168,7 +171,8 @@ class TranslatorService : Service(), FloatingBubble.Listener {
     /** Indique au suivi les zones occupées par nos propres fenêtres, à ignorer. */
     private fun updateMasks() {
         val ov = overlay ?: return
-        val rects = ov.boxRects(dp(6), dp(40)).toMutableList()
+        // Pendant un glissement rapide, nos cartouches sont capturés un peu décalés : marge plus large.
+        val rects = ov.boxRects(dp(6), dp(40) + abs(currentLead) * 2).toMutableList()
         bubble?.let { rects += it.screenRect().apply { inset(-dp(8), -dp(8)) } }
         tracker.masks = rects
     }
@@ -248,7 +252,10 @@ class TranslatorService : Service(), FloatingBubble.Listener {
 
                 try {
                     // 2. OCR
-                    val bubbles = ocrEngine().recognize(bitmap, statusBarHeight())
+                    // Zone morte en bas : barre de navigation + un bandeau réglable (boutons « chapitre suivant »…)
+                    val deadZone = bitmap.height * settings.bottomDeadZone / 100
+                    val ignoreBelow = bitmap.height - navigationBarHeight() - deadZone
+                    val bubbles = ocrEngine().recognize(bitmap, statusBarHeight(), ignoreBelow)
                     if (bubbles.isEmpty()) { flash("∅"); return@launch }
                     val texts = bubbles.map { it.text }
 

@@ -58,13 +58,16 @@ class OcrEngine(val lang: String) {
 
     private class Fragment(val rect: Rect, val lines: List<String>, val lineHeight: Int)
 
-    /** @param ignoreTop les blocs entièrement au-dessus de cette ligne (barre d'état) sont ignorés. */
-    suspend fun recognize(bitmap: Bitmap, ignoreTop: Int): List<TextBubble> {
+    /**
+     * @param ignoreTop les blocs entièrement au-dessus de cette ligne (barre d'état) sont ignorés.
+     * @param ignoreBelow les blocs dont le centre est sous cette ligne (zone morte du bas) sont ignorés.
+     */
+    suspend fun recognize(bitmap: Bitmap, ignoreTop: Int, ignoreBelow: Int = Int.MAX_VALUE): List<TextBubble> {
         val result = recognizer.process(InputImage.fromBitmap(bitmap, 0)).await()
 
         val fragments = result.textBlocks.mapNotNull { block ->
             val box = block.boundingBox ?: return@mapNotNull null
-            if (box.bottom <= ignoreTop) return@mapNotNull null
+            if (box.bottom <= ignoreTop || box.centerY() >= ignoreBelow) return@mapNotNull null
             val lines = block.lines.map { it.text.trim() }.filter { it.isNotEmpty() }
             if (lines.isEmpty()) return@mapNotNull null
             val lh = block.lines.mapNotNull { it.boundingBox?.height() }.average()

@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.slider.Slider
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var overlayStatus: TextView
     private lateinit var overlayButton: MaterialButton
     private lateinit var startButton: MaterialButton
+    private lateinit var accessStatus: TextView
+    private lateinit var accessButton: MaterialButton
+    private lateinit var accessHelp: TextView
 
     private val captureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         val data = res.data
@@ -57,6 +61,12 @@ class MainActivity : AppCompatActivity() {
         overlayStatus = findViewById(R.id.overlayStatus)
         overlayButton = findViewById(R.id.overlayButton)
         startButton = findViewById(R.id.startButton)
+        accessStatus = findViewById(R.id.accessStatus)
+        accessButton = findViewById(R.id.accessButton)
+        accessHelp = findViewById(R.id.accessHelp)
+        accessButton.setOnClickListener {
+            startActivity(Intent(SysSettings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
 
         bindSpinner(findViewById(R.id.sourceSpinner), SOURCE_LANGS, settings.sourceLang) { settings.sourceLang = it }
         bindSpinner(findViewById(R.id.targetSpinner), TARGET_LANGS, settings.targetLang) { settings.targetLang = it }
@@ -64,6 +74,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.followScrollSwitch).apply {
             isChecked = settings.followScroll
             setOnCheckedChangeListener { _, v -> settings.followScroll = v }
+        }
+
+        val deadZoneLabel = findViewById<TextView>(R.id.deadZoneLabel)
+        fun showDeadZone(v: Int) { deadZoneLabel.text = "Zone ignorée en bas de l'écran : $v %" }
+        showDeadZone(settings.bottomDeadZone)
+        findViewById<Slider>(R.id.deadZoneSlider).apply {
+            value = settings.bottomDeadZone.coerceIn(0, 25).toFloat()
+            addOnChangeListener { _, v, _ ->
+                settings.bottomDeadZone = v.toInt()
+                showDeadZone(v.toInt())
+            }
         }
 
         val geminiSection = findViewById<View>(R.id.geminiSection)
@@ -119,6 +140,12 @@ class MainActivity : AppCompatActivity() {
         overlayButton.visibility = if (canOverlay) View.GONE else View.VISIBLE
         startButton.isEnabled = canOverlay
         startButton.text = if (TranslatorService.running) "Arrêter" else "Démarrer"
+
+        val access = OverlayAccessibilityService.isEnabled(this)
+        accessStatus.text = if (access) "✅ Défilement à travers les traductions activé"
+        else "ℹ️ Optionnel : sans ce réglage, un glissement qui commence sur une traduction ne fait pas défiler la page"
+        accessButton.visibility = if (access) View.GONE else View.VISIBLE
+        accessHelp.visibility = if (access) View.GONE else View.VISIBLE
     }
 
     private fun start() {

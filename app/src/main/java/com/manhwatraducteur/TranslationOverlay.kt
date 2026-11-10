@@ -41,7 +41,11 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
     private val minTextSize = context.sp(9)
     private val maxTextSize = context.sp(34)
 
-    private val windows = mutableListOf<Pair<BoxView, WindowManager.LayoutParams>>()
+    private class Win(val view: View, val placed: Placed, val params: WindowManager.LayoutParams, val wm: WindowManager)
+    private val windows = mutableListOf<Win>()
+
+    /** true si les cartouches passent par le service d'accessibilité (glissement possible dessus). */
+    private var accessibilityMode: Boolean? = null
 
     // Écart éventuel entre les coordonnées demandées et la position réelle à l'écran (mesuré une fois).
     private var corrX = 0
@@ -56,12 +60,23 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
 
     fun setItems(items: List<Item>, screenWidth: Int) {
         clear()
+        // Avec le service d'accessibilité, les fenêtres opaques laissent passer les glissements.
+        val acc = OverlayAccessibilityService.instance
+        val useAcc = acc != null
+        if (accessibilityMode != useAcc) {
+            accessibilityMode = useAcc
+            corrX = 0; corrY = 0; calibrated = false
+        }
+        val ctx: Context = acc ?: context
+        val targetWm = acc?.getSystemService(WindowManager::class.java) ?: wm
+        val type = if (useAcc) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         for (item in items) {
             val p = place(item, screenWidth)
-            val view = BoxView(p)
+            val view = BoxView(ctx, p)
             val params = WindowManager.LayoutParams(
                 p.box.width(), p.box.height(),
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                type,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -77,14 +92,14 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
                 }
             }
-            runCatching { wm.addView(view, params) }.onSuccess { windows += view to params }
+            runCatching { targetWm.addView(view, params) }.onSuccess { windows += Win(view, p, params, targetWm) }
         }
-        if (!calibrated) windows.firstOrNull()?.first?.let { calibrate(it) }
+        if (!calibrated) windows.firstOrNull()?.let { calibrate(it) }
     }
 
     fun clear() {
         offsetY = 0
-        for ((view, _) in windows) runCatching { wm.removeView(view) }
+        for (w in windows) runCatching { w.wm.removeView(w.view) }
         windows.clear()
     }
 
@@ -95,25 +110,25 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
     }
 
     /** Position actuelle des cartouches à l'écran, élargie d'une marge (pour les masquer du suivi). */
-    fun boxRects(marginX: Int, marginY: Int): List<Rect> = windows.map { (view, _) ->
-        val b = view.placed.box
+    fun boxRects(marginX: Int, marginY: Int): List<Rect> = windows.map { w ->
+        val b = w.placed.box
         Rect(b.left - marginX, b.top + offsetY - marginY, b.right + marginX, b.bottom + offsetY + marginY)
     }
 
     private fun relayout() {
-        for ((view, params) in windows) {
-            params.x = view.placed.box.left + corrX
-            params.y = view.placed.box.top + offsetY + corrY
-            runCatching { wm.updateViewLayout(view, params) }
+        for (w in windows) {
+            w.params.x = w.placed.box.left + corrX
+            w.params.y = w.placed.box.top + offsetY + corrY
+            runCatching { w.wm.updateViewLayout(w.view, w.params) }
         }
     }
 
     /** Selon les appareils, (0, 0) n'est pas forcément le coin de l'écran : on mesure et on corrige. */
-    private fun calibrate(view: BoxView) = view.doOnLayout {
+    private fun calibrate(w: Win) = w.view.doOnLayout {
         val loc = IntArray(2)
-        view.getLocationOnScreen(loc)
-        val wantX = view.placed.box.left
-        val wantY = view.placed.box.top + offsetY
+        w.view.getLocationOnScreen(loc)
+        val wantX = w.placed.box.left
+        val wantY = w.placed.box.top + offsetY
         corrX += wantX - loc[0]
         corrY += wantY - loc[1]
         calibrated = true
@@ -165,7 +180,7 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
     }
 
     @SuppressLint("ViewConstructor")
-    private inner class BoxView(val placed: Placed) : View(context) {
+    private inner class BoxView(ctx: Context, val placed: Placed) : View(ctx) {
         private val rect = RectF()
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = placed.background }
 
