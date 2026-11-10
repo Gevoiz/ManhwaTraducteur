@@ -34,9 +34,6 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
 
     private class Placed(val box: Rect, val layout: StaticLayout, val textTop: Float)
 
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB0B0B0.toInt(); style = Paint.Style.STROKE; strokeWidth = context.dp(1).toFloat()
-    }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
     private val pad = context.dp(5)          // marge du cartouche autour de la bulle d'origine (ne change pas)
@@ -169,10 +166,8 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
         private val rect = RectF()
 
         override fun onDraw(canvas: Canvas) {
-            val half = strokePaint.strokeWidth / 2
-            rect.set(half, half, width - half, height - half)
+            rect.set(0f, 0f, width.toFloat(), height.toFloat())
             canvas.drawRoundRect(rect, radius, radius, fillPaint)
-            canvas.drawRoundRect(rect, radius, radius, strokePaint)
             canvas.save()
             canvas.translate(textPad.toFloat(), placed.textTop)
             placed.layout.draw(canvas)
