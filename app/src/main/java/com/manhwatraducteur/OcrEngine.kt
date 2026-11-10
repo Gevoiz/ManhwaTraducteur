@@ -14,8 +14,36 @@ import kotlinx.coroutines.tasks.await
 import kotlin.math.max
 import kotlin.math.min
 
-/** Un bloc de texte détecté à l'écran (en général : une bulle de dialogue). */
-data class TextBubble(val rect: Rect, val text: String, val lineHeight: Int)
+/**
+ * Un bloc de texte détecté à l'écran (en général : une bulle de dialogue).
+ * [darkBackground] : texte clair sur fond sombre (le cartouche sera alors noir, texte blanc).
+ */
+data class TextBubble(val rect: Rect, val text: String, val lineHeight: Int, val darkBackground: Boolean = false)
+
+/**
+ * Le texte de la bulle est-il clair (blanc sur fond sombre/coloré) ?
+ * On échantillonne une grille de points : la médiane donne la couleur du fond, et les points qui
+ * s'en écartent nettement sont le texte. S'ils sont plus clairs que le fond → texte clair.
+ * Sans texte bien visible, on se rabat sur la luminosité du fond.
+ */
+fun isDarkBackground(bitmap: Bitmap, rect: Rect): Boolean {
+    val r = Rect(rect)
+    if (!r.intersect(0, 0, bitmap.width, bitmap.height) || r.isEmpty) return false
+    val nx = 24; val ny = 12
+    val lum = IntArray(nx * ny)
+    var n = 0
+    for (j in 0 until ny) for (i in 0 until nx) {
+        val x = r.left + (r.width() - 1) * i / (nx - 1)
+        val y = r.top + (r.height() - 1) * j / (ny - 1)
+        val c = bitmap.getPixel(x, y)
+        lum[n++] = (((c shr 16) and 0xFF) * 77 + ((c shr 8) and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
+    }
+    lum.sort()
+    val median = lum[n / 2]
+    val lighter = lum.count { it > median + 60 }
+    val darker = lum.count { it < median - 60 }
+    return if (maxOf(lighter, darker) >= n * 0.02) lighter > darker else median < 110
+}
 
 class OcrEngine(val lang: String) {
 
@@ -46,7 +74,8 @@ class OcrEngine(val lang: String) {
 
         return merge(fragments).mapNotNull { f ->
             val text = join(f.lines)
-            if (text.count { it.isLetter() } < 2) null else TextBubble(f.rect, text, f.lineHeight)
+            if (text.count { it.isLetter() } < 2) null
+            else TextBubble(f.rect, text, f.lineHeight, isDarkBackground(bitmap, f.rect))
         }
     }
 

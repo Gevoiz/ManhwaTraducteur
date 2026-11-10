@@ -32,9 +32,8 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
 
     data class Item(val bubble: TextBubble, val translated: String)
 
-    private class Placed(val box: Rect, val layout: StaticLayout, val textTop: Float)
+    private class Placed(val box: Rect, val layout: StaticLayout, val textTop: Float, val background: Int)
 
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
     private val pad = context.dp(5)          // marge du cartouche autour de la bulle d'origine (ne change pas)
     private val textPad = context.dp(3)      // marge du texte à l'intérieur du cartouche
@@ -131,7 +130,11 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
 
         // Le cartouche garde sa taille : on cherche la plus grande police qui y tient
         // (sans couper un mot en deux), plafonnée un peu au-dessus de la taille du texte d'origine.
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; typeface = this@TranslationOverlay.typeface }
+        val dark = item.bubble.darkBackground
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (dark) Color.WHITE else Color.BLACK
+            typeface = this@TranslationOverlay.typeface
+        }
         val words = item.translated.split(Regex("\\s+")).filter { it.isNotEmpty() }
         fun build(size: Float): StaticLayout {
             paint.textSize = size
@@ -158,12 +161,13 @@ class TranslationOverlay(private val context: Context, private val wm: WindowMan
         val left = (r.centerX() - boxW / 2).coerceIn(margin, max(margin, screenW - boxW - margin))
         val top = r.top - pad
         val box = Rect(left, top, left + boxW, top + boxH)
-        return Placed(box, layout, (boxH - layout.height) / 2f)
+        return Placed(box, layout, (boxH - layout.height) / 2f, if (dark) Color.BLACK else Color.WHITE)
     }
 
     @SuppressLint("ViewConstructor")
     private inner class BoxView(val placed: Placed) : View(context) {
         private val rect = RectF()
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = placed.background }
 
         override fun onDraw(canvas: Canvas) {
             rect.set(0f, 0f, width.toFloat(), height.toFloat())
