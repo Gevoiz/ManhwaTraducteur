@@ -12,12 +12,15 @@ import android.provider.Settings as SysSettings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.RadioGroup
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 
@@ -58,9 +61,30 @@ class MainActivity : AppCompatActivity() {
         bindSpinner(findViewById(R.id.sourceSpinner), SOURCE_LANGS, settings.sourceLang) { settings.sourceLang = it }
         bindSpinner(findViewById(R.id.targetSpinner), TARGET_LANGS, settings.targetLang) { settings.targetLang = it }
 
-        findViewById<MaterialSwitch>(R.id.autoClearSwitch).apply {
-            isChecked = settings.autoClear
-            setOnCheckedChangeListener { _, v -> settings.autoClear = v }
+        findViewById<MaterialSwitch>(R.id.followScrollSwitch).apply {
+            isChecked = settings.followScroll
+            setOnCheckedChangeListener { _, v -> settings.followScroll = v }
+        }
+
+        val geminiSection = findViewById<View>(R.id.geminiSection)
+        findViewById<RadioGroup>(R.id.engineGroup).apply {
+            check(if (settings.engine == ENGINE_GEMINI) R.id.engineGemini else R.id.engineMlkit)
+            geminiSection.visibility = if (settings.engine == ENGINE_GEMINI) View.VISIBLE else View.GONE
+            setOnCheckedChangeListener { _, id ->
+                settings.engine = if (id == R.id.engineGemini) ENGINE_GEMINI else ENGINE_MLKIT
+                geminiSection.visibility = if (id == R.id.engineGemini) View.VISIBLE else View.GONE
+            }
+        }
+        findViewById<EditText>(R.id.geminiKey).apply {
+            setText(settings.geminiKey)
+            doAfterTextChanged { settings.geminiKey = it?.toString().orEmpty() }
+        }
+        findViewById<EditText>(R.id.geminiModel).apply {
+            setText(settings.geminiModel)
+            doAfterTextChanged { settings.geminiModel = it?.toString().orEmpty() }
+        }
+        findViewById<View>(R.id.geminiKeyButton).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey")))
         }
         findViewById<MaterialSwitch>(R.id.autoModeSwitch).apply {
             isChecked = settings.autoMode

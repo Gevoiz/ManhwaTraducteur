@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.Layout
@@ -35,14 +36,34 @@ class TranslationOverlayView(context: Context) : View(context) {
     private var placed: List<Placed> = emptyList()
     private val loc = IntArray(2)
 
+    /** Décalage vertical appliqué à toutes les traductions (suivi du défilement). */
+    var offsetY = 0
+        private set
+
+    fun setOffset(dy: Int) {
+        if (dy == offsetY) return
+        offsetY = dy
+        invalidate()
+    }
+
+    /** Position actuelle des cartouches à l'écran, élargie d'une marge (pour les masquer du suivi). */
+    fun boxRects(marginX: Int, marginY: Int): List<Rect> = placed.map {
+        Rect(
+            it.box.left.toInt() - marginX, it.box.top.toInt() + offsetY - marginY,
+            it.box.right.toInt() + marginX, it.box.bottom.toInt() + offsetY + marginY,
+        )
+    }
+
     val hasItems get() = placed.isNotEmpty()
 
     fun setItems(items: List<Item>, screenWidth: Int) {
+        offsetY = 0
         placed = items.map { place(it, screenWidth) }
         invalidate()
     }
 
     fun clear() {
+        offsetY = 0
         if (placed.isEmpty()) return
         placed = emptyList()
         invalidate()
@@ -84,7 +105,7 @@ class TranslationOverlayView(context: Context) : View(context) {
         // Les coordonnées OCR sont celles de l'écran physique : on compense la position de la fenêtre.
         getLocationOnScreen(loc)
         canvas.save()
-        canvas.translate(-loc[0].toFloat(), -loc[1].toFloat())
+        canvas.translate(-loc[0].toFloat(), (offsetY - loc[1]).toFloat())
         for (p in placed) {
             canvas.drawRoundRect(p.box, radius, radius, boxPaint)
             canvas.drawRoundRect(p.box, radius, radius, strokePaint)

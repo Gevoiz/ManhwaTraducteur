@@ -48,12 +48,89 @@
             android:layout_width="match_parent"
             android:layout_height="48dp" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Moteur de traduction"
+            android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+        <RadioGroup
+            android:id="@+id/engineGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <RadioButton
+                android:id="@+id/engineMlkit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Hors-ligne (ML Kit) : rapide, sans compte, plus littéral" />
+
+            <RadioButton
+                android:id="@+id/engineGemini"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="IA Gemini (en ligne) : traduction naturelle, clé gratuite" />
+        </RadioGroup>
+
+        <LinearLayout
+            android:id="@+id/geminiSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="8dp">
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Clé API Gemini"
+                app:endIconMode="password_toggle"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/geminiKey"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:singleLine="true" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="Modèle Gemini">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/geminiModel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:singleLine="true" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/geminiKeyButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Obtenir une clé gratuite (Google AI Studio)" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="La capture de l'écran et les textes sont envoyés à Google pour être traduits. Avec la clé gratuite, Google peut s'en servir pour améliorer ses modèles."
+                android:textAppearance="?attr/textAppearanceBodySmall" />
+        </LinearLayout>
+
         <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/autoClearSwitch"
+            android:id="@+id/followScrollSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Effacer la traduction quand je fais défiler" />
+            android:text="Les traductions suivent la page quand je fais défiler" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/autoModeSwitch"

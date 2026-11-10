@@ -21,6 +21,13 @@ val TARGET_LANGS = listOf(
     Lang(TranslateLanguage.PORTUGUESE, "Portugais"),
 )
 
+fun languageName(code: String): String =
+    (SOURCE_LANGS + TARGET_LANGS).firstOrNull { it.code == code }?.label?.lowercase() ?: code
+
+const val ENGINE_MLKIT = "mlkit"
+const val ENGINE_GEMINI = "gemini"
+const val DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 class Settings(context: Context) {
     private val sp = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -32,13 +39,25 @@ class Settings(context: Context) {
         get() = sp.getString("target", TranslateLanguage.FRENCH)!!
         set(v) = sp.edit().putString("target", v).apply()
 
-    /** Efface la traduction dès que le contenu de l'écran change (défilement). */
-    var autoClear: Boolean
-        get() = sp.getBoolean("autoClear", true)
-        set(v) = sp.edit().putBoolean("autoClear", v).apply()
+    /** Les traductions suivent la page quand on fait défiler (sinon elles s'effacent). */
+    var followScroll: Boolean
+        get() = sp.getBoolean("followScroll", true)
+        set(v) = sp.edit().putBoolean("followScroll", v).apply()
 
     /** Retraduit automatiquement quand l'écran redevient immobile. */
     var autoMode: Boolean
         get() = sp.getBoolean("autoMode", false)
         set(v) = sp.edit().putBoolean("autoMode", v).apply()
+
+    var engine: String
+        get() = sp.getString("engine", ENGINE_MLKIT)!!
+        set(v) = sp.edit().putString("engine", v).apply()
+
+    var geminiKey: String
+        get() = sp.getString("geminiKey", "")!!
+        set(v) = sp.edit().putString("geminiKey", v.trim()).apply()
+
+    var geminiModel: String
+        get() = sp.getString("geminiModel", DEFAULT_GEMINI_MODEL)!!
+        set(v) = sp.edit().putString("geminiModel", v.trim()).apply()
 }

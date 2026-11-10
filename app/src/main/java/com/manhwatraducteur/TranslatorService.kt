@@ -23,15 +23,15 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.IntentCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 class TranslatorService : Service(), FloatingBubble.Listener {
 
@@ -56,15 +56,19 @@ class TranslatorService : Service(), FloatingBubble.Listener {
 
     private var projection: MediaProjection? = null
     private var capturer: ScreenCapturer? = null
+    private val tracker = ScrollTracker()
     private var bubble: FloatingBubble? = null
     private var overlay: TranslationOverlayView? = null
     private var ocr: OcrEngine? = null
-    private var translator: TranslatorEngine? = null
+    private var mlkit: MlKitEngine? = null
+    private var gemini: GeminiEngine? = null
 
     private var state = State.IDLE
     private var ignoreFramesUntil = 0L
     private var lastFrameAt = 0L
     private var changedSinceTranslate = true
+    private var lostFrames = 0
+    private var missingKeyWarned = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -95,7 +99,7 @@ class TranslatorService : Service(), FloatingBubble.Listener {
         }, main)
         projection = p
 
-        capturer = ScreenCapturer(this, p) { main.post(::onFrame) }.also { it.start() }
+        capturer = ScreenCapturer(this, p, tracker) { res -> main.post { onFrame(res) } }.also { it.start() }
         setupWindows()
         running = true
         main.postDelayed(autoTick, 500)
@@ -151,23 +155,57 @@ class TranslatorService : Service(), FloatingBubble.Listener {
     override fun onMoved() {
         // Déplacer la bulle redessine l'écran : ce n'est pas un défilement.
         ignoreFramesUntil = SystemClock.uptimeMillis() + 400
+        updateMasks()
     }
 
-    // ------------------------------------------------------------------ détection de changement
+    // ------------------------------------------------------------------ suivi de l'écran
 
-    private fun onFrame() {
+    private fun onFrame(res: ScrollTracker.Result?) {
         val now = SystemClock.uptimeMillis()
-        if (state == State.BUSY || now < ignoreFramesUntil) return
+        if (state == State.BUSY) return
+        val ov = overlay ?: return
+
+        if (state == State.SHOWING && settings.followScroll && res != null) {
+            when (res) {
+                is ScrollTracker.Result.Offset -> {
+                    lostFrames = 0
+                    if (res.dy != ov.offsetY) {
+                        ov.setOffset(res.dy)
+                        updateMasks()
+                        lastFrameAt = now
+                        changedSinceTranslate = true
+                    }
+                }
+                ScrollTracker.Result.Lost -> if (++lostFrames >= 3) {
+                    clearTranslations()
+                    lastFrameAt = now
+                    changedSinceTranslate = true
+                }
+            }
+            return
+        }
+
+        if (now < ignoreFramesUntil) return
         lastFrameAt = now
         changedSinceTranslate = true
-        if (state == State.SHOWING && settings.autoClear) clearTranslations()
+        if (state == State.SHOWING) clearTranslations()
+    }
+
+    /** Indique au suivi les zones occupées par nos propres fenêtres, à ignorer. */
+    private fun updateMasks() {
+        val ov = overlay ?: return
+        val rects = ov.boxRects(dp(6), dp(40)).toMutableList()
+        bubble?.let { rects += it.screenRect().apply { inset(-dp(8), -dp(8)) } }
+        tracker.masks = rects
     }
 
     private val autoTick = object : Runnable {
         override fun run() {
             val now = SystemClock.uptimeMillis()
             if (settings.autoMode && state != State.BUSY && changedSinceTranslate && now - lastFrameAt > 700) {
-                translateScreen()
+                // Avec le suivi, on ne retraduit que si une bonne partie de l'écran est nouvelle.
+                val scrolled = abs(overlay?.offsetY ?: 0) > (capturer?.height ?: 0) * 0.2
+                if (state == State.IDLE || scrolled) translateScreen()
             }
             main.postDelayed(this, 300)
         }
@@ -175,22 +213,42 @@ class TranslatorService : Service(), FloatingBubble.Listener {
 
     private fun clearTranslations() {
         overlay?.clear()
+        tracker.reset()
+        lostFrames = 0
         if (state == State.SHOWING) state = State.IDLE
         ignoreFramesUntil = SystemClock.uptimeMillis() + 250
     }
 
     // ------------------------------------------------------------------ traduction
 
-    private fun engines(): Pair<OcrEngine, TranslatorEngine> {
+    private fun ocrEngine(): OcrEngine {
         val src = settings.sourceLang
-        val tgt = settings.targetLang
         if (ocr?.lang != src) { ocr?.close(); ocr = OcrEngine(src) }
-        val t = translator
-        if (t == null || t.source != src || t.target != tgt) {
-            t?.close(); translator = TranslatorEngine(src, tgt)
-            bubble?.setIdleLabel(tgt.uppercase())
+        return ocr!!
+    }
+
+    private fun mlkitEngine(): MlKitEngine {
+        val src = settings.sourceLang; val tgt = settings.targetLang
+        val m = mlkit
+        if (m != null && m.source == src && m.target == tgt) return m
+        m?.close()
+        return MlKitEngine(src, tgt).also { mlkit = it }
+    }
+
+    /** Le moteur Gemini si choisi et configuré, sinon null. */
+    private fun geminiEngine(): GeminiEngine? {
+        if (settings.engine != ENGINE_GEMINI) return null
+        val key = settings.geminiKey
+        if (key.isBlank()) {
+            if (!missingKeyWarned) toast("Ajoute ta clé Gemini dans l'appli. En attendant : traduction hors-ligne.")
+            missingKeyWarned = true
+            return null
         }
-        return ocr!! to translator!!
+        val src = settings.sourceLang; val tgt = settings.targetLang
+        val model = settings.geminiModel.ifBlank { DEFAULT_GEMINI_MODEL }
+        val g = gemini
+        if (g != null && g.source == src && g.target == tgt && g.model == model.removePrefix("models/")) return g
+        return GeminiEngine(key, model, src, tgt).also { gemini = it }
     }
 
     private fun translateScreen() {
@@ -205,37 +263,58 @@ class TranslatorService : Service(), FloatingBubble.Listener {
             try {
                 // 1. On cache tout ce qui nous appartient puis on attend une image « propre » de l'écran.
                 ov.clear()
+                tracker.reset()
                 b.setHidden(true)
                 delay(220)
                 val bitmap = withContext(Dispatchers.Default) { cap.grab() }
                 b.setHidden(false)
                 b.setStatus("…")
                 if (bitmap == null) { flash("!"); return@launch }
+                b.setIdleLabel(settings.targetLang.uppercase())
 
-                // 2. OCR
-                val (ocrEngine, tr) = engines()
-                val bubbles = try {
-                    ocrEngine.recognize(bitmap, statusBarHeight())
+                try {
+                    // 2. OCR
+                    val bubbles = ocrEngine().recognize(bitmap, statusBarHeight())
+                    if (bubbles.isEmpty()) { flash("∅"); return@launch }
+                    val texts = bubbles.map { it.text }
+
+                    // 3. Traduction : Gemini si configuré, sinon (ou en cas d'échec) ML Kit hors-ligne
+                    var translations: List<String>? = null
+                    geminiEngine()?.let { g ->
+                        translations = try {
+                            g.translateAll(texts, bitmap)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Gemini a échoué", e)
+                            toast("Gemini : ${e.message} → traduction hors-ligne")
+                            null
+                        }
+                    }
+                    val result = translations ?: run {
+                        val m = mlkitEngine()
+                        if (!m.ready) {
+                            b.setStatus("↓")
+                            toast("Téléchargement du modèle de traduction (une seule fois)…")
+                        }
+                        m.translateAll(texts, null)
+                    }
+
+                    // 4. Affichage + référence pour le suivi du défilement
+                    val items = bubbles.zip(result)
+                        .filter { it.second.isNotBlank() }
+                        .map { (bub, tr) -> TranslationOverlayView.Item(bub, tr) }
+                    if (items.isEmpty()) { flash("∅"); return@launch }
+                    withContext(Dispatchers.Default) { tracker.setReference(bitmap) }
+                    ov.setItems(items, cap.width)
+                    updateMasks()
+                    shown = true
+                    b.setStatus(null)
                 } finally {
                     bitmap.recycle()
                 }
-                if (bubbles.isEmpty()) { flash("∅"); return@launch }
-
-                // 3. Traduction (téléchargement du modèle la toute première fois)
-                if (!tr.ready) {
-                    b.setStatus("↓")
-                    toast("Téléchargement du modèle de traduction (une seule fois)…")
-                }
-                tr.ensureModel()
-                b.setStatus("…")
-                val items = bubbles.map { bub ->
-                    async { TranslationOverlayView.Item(bub, tr.translate(bub.text)) }
-                }.awaitAll()
-
-                // 4. Affichage
-                ov.setItems(items, cap.width)
-                shown = true
-                b.setStatus(null)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Échec de la traduction", e)
                 b.setHidden(false)
@@ -247,8 +326,10 @@ class TranslatorService : Service(), FloatingBubble.Listener {
                     else "Erreur : $msg"
                 )
             } finally {
+                if (!shown) tracker.reset()
                 state = if (shown) State.SHOWING else State.IDLE
                 changedSinceTranslate = false
+                lostFrames = 0
                 ignoreFramesUntil = SystemClock.uptimeMillis() + 700
             }
         }
@@ -292,9 +373,11 @@ class TranslatorService : Service(), FloatingBubble.Listener {
         bubble?.detach(); bubble = null
         overlay?.let { runCatching { wm.removeView(it) } }; overlay = null
         capturer?.stop(); capturer = null
+        tracker.reset()
         projection?.stop(); projection = null
         ocr?.close(); ocr = null
-        translator?.close(); translator = null
+        mlkit?.close(); mlkit = null
+        gemini = null
         super.onDestroy()
     }
 }

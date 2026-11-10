@@ -11,8 +11,8 @@ android {
         applicationId = "com.manhwatraducteur"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // Uniquement les processeurs de téléphones (retire x86/x86_64 des émulateurs : APK 2x plus léger)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

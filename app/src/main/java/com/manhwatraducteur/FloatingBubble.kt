@@ -99,6 +99,13 @@ class FloatingBubble(
     }
 
     fun attach() = wm.addView(view, params)
+
+    /** Position de la bulle à l'écran. */
+    fun screenRect(): android.graphics.Rect {
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        return android.graphics.Rect(loc[0], loc[1], loc[0] + size, loc[1] + size)
+    }
     fun detach() { runCatching { wm.removeView(view) } }
 
     fun setIdleLabel(label: String) {

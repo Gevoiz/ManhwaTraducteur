@@ -23,7 +23,8 @@ import android.view.WindowManager
 class ScreenCapturer(
     private val context: Context,
     private val projection: MediaProjection,
-    private val onFrame: () -> Unit,
+    private val tracker: ScrollTracker,
+    private val onFrame: (ScrollTracker.Result?) -> Unit,
 ) {
     private val thread = HandlerThread("screen-capture").apply { start() }
     private val handler = Handler(thread.looper)
@@ -90,11 +91,12 @@ class ScreenCapturer(
             setOnImageAvailableListener({ r ->
                 val img = try { r.acquireLatestImage() } catch (_: IllegalStateException) { null }
                     ?: return@setOnImageAvailableListener
+                val result = if (tracker.active) runCatching { tracker.track(img) }.getOrNull() else null
                 synchronized(lock) {
                     latest?.close()
                     latest = img
                 }
-                onFrame()
+                onFrame(result)
             }, handler)
         }
 
